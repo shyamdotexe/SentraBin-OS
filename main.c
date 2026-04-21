@@ -10,6 +10,7 @@
 #define ADMIN_PASS "admin@123"
 #define BINS_CSV "bins.csv"
 #define VEHICLES_CSV "vehicle.csv"
+#define DRIVERS_CSV "drivers.csv"
 #define NETIZEN_PASS "guest@123"
 
 // ── Waste Types ────────────────────────────────────────────────────────────────
@@ -60,6 +61,29 @@ typedef struct {
     char  registration[15];          // vehicle plate number
 } Vehicle;
 Vehicle vehicles[MAX_VEHICLES];
+
+typedef struct Driver{
+    // === IDENTITY ===
+    int   driver_id; // [Hazard Flag][Serial] 1___ - normal driver, 8___ - hazardous Certified Driver
+    char  name[50];
+    char  phone[10];
+
+    // === OPERATIONAL STATUS ===
+    int   assigned_vehicle_id; // 0 if none
+    bool  is_available; // 1 if available 0 if unavailable
+    bool  is_suspended; // 0 if false 1 if suspended
+
+    // === COMPLIANCE ===
+    // We only need this one specific flag for your logic
+    bool  has_hazmat_license; // 1 if true 0 if none
+
+    // === WORKLOAD ===
+    float hours_worked_today;
+    float max_daily_hours;
+};
+
+Driver drivers[MAX_DRIVERS];
+
 // ══════════════════════════════════════════════════════════════════════════════
 //  HELPERS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -105,14 +129,16 @@ float computeWPI(float fill, int wasteType) {
 }
 
 // ── Check if CSV file already has a header ─────────────────────────────────────
-int csvHasHeader() {
-    FILE *fp = fopen(BINS_CSV, "r");
-    if (!fp) return 0;
-    char line[256];
-    fgets(line, sizeof(line), fp);
+
+bool isCsvEmpty(const char* filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) return true; // File doesn't exist, so it's "empty"
+
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
     fclose(fp);
-    // If first line starts with 'b' it's the header row
-    return (line[0] == 'b');
+
+    return (size == 0); // Returns true if file size is 0 bytes
 }
 // ── Generate unique Vehicle ID: serial ─────────────────
 int generateVehicleID() {
@@ -189,7 +215,7 @@ void createBin() {
         printf("Error Loading Database!\n");
         return;
     }
-    if (!csvHasHeader()) {
+    if (isCsvEmpty(BINS_CSV)) {
         fprintf(fp, "bin_id,zone,waste_type,capacity,fill_level,x,y,wpi,collected_today\n");
     }
 
@@ -418,7 +444,7 @@ void createVehicle() {
     }
 
     // Write header if file is new
-    if (!csvHasHeader(VEHICLES_CSV)) {
+    if (isCsvEmpty(VEHICLES_CSV)) {
         fprintf(fp, "vehicle_id,type,max_capacity,fuel_tank_capacity,fuel_consumption_rate,");
         fprintf(fp, "assigned_zone,is_available,under_maintenance,assigned_driver_id,");
         fprintf(fp, "current_load,registration\n");
@@ -590,6 +616,34 @@ void viewVehicles() {
     printf("  [=] In Use     : %d\n", in_use_count);
     printf("  [!] Maintenance: %d\n", maintenance_count);
     printf("========================================\n");
+}
+// ── Driver Management Module ────────────────────────────────────────────────────────
+int createDriverID() {
+
+}
+
+void createDriver() {
+    int n;
+    printf("\n========================================");
+    printf("\n     CREATE DRIVER RECORDS MODULE            ");
+    printf("\n========================================\n");
+    printf("\nEnter the No of Driver Records to Be Created: ");
+    scanf("%d", &n);
+    FILE *fp = fopen(DRIVERS_CSV, "a");
+    if (isCsvEmpty(DRIVERS_CSV)) {
+        fprintf(fp, "driver_id,name,phone,vehicle_id,available,suspended,hazmat,hours_today,max_hours\n");
+    }
+    for (int i = 0; i < n; i++) {
+        printf("\nEnter the Driver %d's Name : ");
+        scanf("%[^\n]s", &drivers[i].name);
+        printf("\nEnter the Driver %d's Phone Number : ");
+        scanf("%[^\n]s", &drivers[i].phone);
+        printf("\nEnter the Driver %d's Assigned Vehicle ID : ");
+        scanf("%d", &drivers[i].assigned_vehicle_id);
+        printf("")
+// continue from here
+
+    }
 }
 // ── Role-Specific Menus ────────────────────────────────────────────────────────
 
