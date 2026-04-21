@@ -103,16 +103,17 @@ float computeWPI(float fill, int wasteType) {
     }
     return (0.4f * typefactor) + (0.6f * fill);
 }
-
+bool isCsvEmpty(const char* filename);
 // ── Check if CSV file already has a header ─────────────────────────────────────
-int csvHasHeader() {
-    FILE *fp = fopen(BINS_CSV, "r");
-    if (!fp) return 0;
-    char line[256];
-    fgets(line, sizeof(line), fp);
+bool isCsvEmpty(const char* filename) {
+    FILE *fp = fopen(filename, "r");
+    if (!fp) return true; // File doesn't exist, so it's "empty"
+
+    fseek(fp, 0, SEEK_END);
+    long size = ftell(fp);
     fclose(fp);
-    // If first line starts with 'b' it's the header row
-    return (line[0] == 'b');
+
+    return (size == 0); // Returns true if file size is 0 bytes
 }
 // ── Generate unique Vehicle ID: serial ─────────────────
 int generateVehicleID() {
@@ -189,7 +190,7 @@ void createBin() {
         printf("Error Loading Database!\n");
         return;
     }
-    if (!csvHasHeader()) {
+    if (isCsvEmpty(BINS_CSV)) {
         fprintf(fp, "bin_id,zone,waste_type,capacity,fill_level,x,y,wpi,collected_today\n");
     }
 
@@ -418,7 +419,7 @@ void createVehicle() {
     }
 
     // Write header if file is new
-    if (!csvHasHeader(VEHICLES_CSV)) {
+    if (isCsvEmpty(VEHICLES_CSV)) {
         fprintf(fp, "vehicle_id,type,max_capacity,fuel_tank_capacity,fuel_consumption_rate,");
         fprintf(fp, "assigned_zone,is_available,under_maintenance,assigned_driver_id,");
         fprintf(fp, "current_load,registration\n");
@@ -428,7 +429,6 @@ void createVehicle() {
         printf("\n--- Enter Details for Vehicle %d ---", i + 1);
 
         // Generate unique vehicle ID
-
 
         // Vehicle Type
         printf("\nSelect Vehicle Type:\n");
@@ -591,8 +591,220 @@ void viewVehicles() {
     printf("  [!] Maintenance: %d\n", maintenance_count);
     printf("========================================\n");
 }
-// ── Role-Specific Menus ────────────────────────────────────────────────────────
 
+// ================= USER FEATURE MODULES =================
+
+int isValidZone(int zone) {
+    return (zone >= 1 && zone <= MAX_ZONE);
+}
+
+void saveBinsToCSV(int total) {
+    FILE *fp = fopen(BINS_CSV, "w");
+    if (!fp) {
+        printf("Error saving bins!\n");
+        return;
+    }
+
+    fprintf(fp, "bin_id,zone,waste_type,capacity,fill_level,x,y,wpi,collected_today\n");
+
+    for (int i = 0; i < total; i++) {
+        fprintf(fp, "%lld,%d,%s,%.2f,%.2f,%d,%d,%.2f,%d\n",
+                bins[i].bin_id,
+                bins[i].zone,
+                getWasteTypeString(bins[i].waste_type),
+                bins[i].capacity,
+                bins[i].fill_level,
+                bins[i].x,
+                bins[i].y,
+                bins[i].wpi,
+                (int)bins[i].collected_today);
+    }
+
+    fclose(fp);
+}
+
+void viewBinsByZone() {
+    int zone;
+    printf("Enter your zone: ");
+    scanf("%d", &zone);
+
+    if (!isValidZone(zone)) {
+        printf("Invalid zone!\n");
+        return;
+    }
+
+    int total = loadBinsFromCSV();
+    if (total == 0) return;
+
+    printf("\n--- Bins in Zone %d ---\n", zone);
+
+    int found = 0;
+
+    for (int i = 0; i < total; i++) {
+        if (bins[i].zone == zone) {
+            printf("ID: %lld | Type: %-10s | Fill: %5.1f%% | WPI: %6.2f\n",
+                   bins[i].bin_id,
+                   getWasteTypeString(bins[i].waste_type),
+                   bins[i].fill_level,
+                   bins[i].wpi);
+            found = 1;
+        }
+    }
+
+    if (!found) printf("No bins found in your zone.\n");
+}
+
+void throwWaste() {
+    int zone, type;
+    float waste;
+
+    printf("Enter your zone: ");
+    scanf("%d", &zone);
+
+    if (!isValidZone(zone)) {
+        printf("Invalid zone!\n");
+        return;
+    }
+
+    printf("Select Waste Type (1-DRY, 2-WET, 3-MIXED, 4-HAZARDOUS): ");
+    scanf("%d", &type);
+
+    if (type < 1 || type > 4) {
+        printf("Invalid waste type!\n");
+        return;
+    }
+
+    int total = loadBinsFromCSV();
+    if (total == 0) return;
+
+    int found = 0;
+
+    printf("\nAvailable bins:\n");
+    for (int i = 0; i < total; i++) {
+        if (bins[i].zone == zone && bins[i].waste_type == type) {
+            printf("ID: %lld | Fill: %.1f%%\n",
+                   bins[i].bin_id,
+                   bins[i].fill_level);
+            found = 1;
+        }
+    }
+
+    if (!found) {
+        printf("No matching bins found!\n");
+        return;
+    }
+
+    long long int id;
+    printf("Enter Bin ID: ");
+    scanf("%lld", &id);
+
+    printf("Enter waste amount (%%): ");
+    scanf("%f", &waste);
+
+    if (waste <= 0) {
+        printf("Invalid waste amount!\n");
+        return;
+    }
+
+    for (int i = 0; i < total; i++) {
+        if (bins[i].bin_id == id) {
+
+            if (bins[i].zone != zone || bins[i].waste_type != type) {
+                printf("Wrong bin selected!\n");
+                return;
+            }
+
+            if (bins[i].fill_level + waste <= 100.0f) {
+                bins[i].fill_level += waste;
+                bins[i].wpi = computeWPI(bins[i].fill_level, bins[i].waste_type);
+
+                printf("Waste added successfully!\n");
+
+                saveBinsToCSV(total);
+
+                printf("\n[System Update]\n");
+                identifyCriticalBins();
+
+            } else {
+                printf("Bin overflow! Choose another bin.\n");
+            }
+            return;
+        }
+    }
+
+    printf("Invalid Bin ID!\n");
+}
+
+void raiseComplaint() {
+    long long int id;
+
+    int total = loadBinsFromCSV();
+    if (total == 0) return;
+
+    printf("Enter Bin ID to raise complaint: ");
+    scanf("%lld", &id);
+
+    for (int i = 0; i < total; i++) {
+        if (bins[i].bin_id == id) {
+
+            if (bins[i].fill_level >= 85) {
+
+                bins[i].wpi += 25;
+                if (bins[i].wpi > 100) bins[i].wpi = 100;
+
+                printf("Complaint registered!\n");
+
+                saveBinsToCSV(total);
+
+                printf("\n[System Alert]\n");
+                identifyCriticalBins();
+
+            } else {
+                printf("Bin not critical enough.\n");
+            }
+            return;
+        }
+    }
+
+    printf("Invalid Bin ID!\n");
+}
+
+void suggestBestBin() {
+    int zone, type;
+
+    printf("Enter your zone: ");
+    scanf("%d", &zone);
+
+    printf("Enter waste type (1-4): ");
+    scanf("%d", &type);
+
+    int total = loadBinsFromCSV();
+    if (total == 0) return;
+
+    int best = -1;
+    float minFill = 101;
+
+    for (int i = 0; i < total; i++) {
+        if (bins[i].zone == zone && bins[i].waste_type == type) {
+            if (bins[i].fill_level < minFill) {
+                minFill = bins[i].fill_level;
+                best = i;
+            }
+        }
+    }
+
+    if (best == -1) {
+        printf("No suitable bin found.\n");
+        return;
+    }
+
+    printf("\nSuggested Bin:\n");
+    printf("ID: %lld | Fill: %.1f%% | WPI: %.2f\n",
+           bins[best].bin_id,
+           bins[best].fill_level,
+           bins[best].wpi);
+}
+// ── Role-Specific Menus ────────────────────────────────────────────────────────
 void adminMenu(const char* adminName) { // Pass the name from userAUTH
     int choice;
     int select;
@@ -648,19 +860,24 @@ void adminMenu(const char* adminName) { // Pass the name from userAUTH
         }
 
 
-
     }
 }
 
-void netizenMenu() {
+void netizenMenu(char *username) {
     int choice;
+
     while (1) {
-        printf("===========================================================\n");
-        printf("        SENTRABIN OS - Centralized Bin Operations       \n");
-        printf("===========================================================\n");
-        printf("\n1. View Local Bins (Critical Only)");
-        printf("\n0. Logout");
-        printf("\nEnter Choice: ");
+        printf("\n========================================\n");
+        printf("        SENTRABIN OS - USER MODE       \n");
+        printf("========================================\n");
+
+        printf("1. View Bins\n");
+        printf("2. Throw Waste\n");
+        printf("3. Raise Complaint\n");
+        printf("4. Suggest Best Bin\n");
+        printf("0. Logout\n");
+
+        printf("Enter Choice: ");
 
         if (scanf("%d", &choice) != 1) {
             while(getchar() != '\n');
@@ -668,18 +885,19 @@ void netizenMenu() {
         }
 
         switch (choice) {
-            case 1: identifyCriticalBins(); break; // Netizens can see, but maybe not edit
+            case 1: viewBinsByZone(); break;
+            case 2: throwWaste(); break;
+            case 3: raiseComplaint(); break;
+            case 4: suggestBestBin(); break;
             case 0: return;
-            default: printf("Invalid choice.\n");
+            default: printf("Invalid choice!\n");
         }
     }
 }
-
 // ── Auth Logic ─────────────────────────────────────────────────────────
 
 const char* userAUTH(char* outUsername) {
     char pass[32];
-
 
     printf("==========================================\n");
     printf("        SENTRABIN OS - SECURE LOGIN       \n");
@@ -702,6 +920,31 @@ const char* userAUTH(char* outUsername) {
     return "unauthorized";
 }
 
+//    User features
+void userfeatures(){
+    int choice;
+    while (1) {
+        printf("===========================================================\n");
+        printf("        SENTRABIN OS - Centralized Bin Operations       \n");
+        printf("===========================================================\n");
+
+        printf("\n1. View bins");
+        printf("\n0. Logout");
+        printf("\nEnter Choice: ");
+
+        scanf("%d", &choice);
+
+        switch(choice){
+            case 1:
+                viewBinsByZone();
+                break;
+            case 0:
+                return;
+            default:
+                printf("Invalid choice\n");
+        }
+    }
+}
 // ── Main Entry Point ───────────────────────────────────────────────────────────
 
 int main() {
@@ -722,3 +965,4 @@ int main() {
     printf("\nSession Ended. Goodbye!\n");
     return 0;
 }
+
