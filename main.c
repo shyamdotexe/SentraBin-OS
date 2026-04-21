@@ -62,7 +62,7 @@ typedef struct {
 } Vehicle;
 Vehicle vehicles[MAX_VEHICLES];
 
-typedef struct Driver{
+typedef struct{
     // === IDENTITY ===
     int   driver_id; // [Hazard Flag][Serial] 1___ - normal driver, 8___ - hazardous Certified Driver
     char  name[50];
@@ -80,7 +80,7 @@ typedef struct Driver{
     // === WORKLOAD ===
     float hours_worked_today;
     float max_daily_hours;
-};
+} Driver;
 
 Driver drivers[MAX_DRIVERS];
 
@@ -618,161 +618,280 @@ void viewVehicles() {
     printf("========================================\n");
 }
 // ── Driver Management Module ────────────────────────────────────────────────────────
-int createDriverID() {
+int generateDriverID(bool hasHazmat) {
+    FILE *fp = fopen(DRIVERS_CSV, "r");
 
+    // Set the prefix based on certification
+    // 1000 for normal, 8000 for hazardous
+    int prefix = hasHazmat ? 8000 : 1000;
+    int maxSerial = 0;
+
+    // If the file doesn't exist yet, start with the first ID (e.g., 1001 or 8001)
+    if (fp == NULL) {
+        return prefix + 1;
+    }
+
+    char line[512];
+    // Read and skip the header line
+    if (fgets(line, sizeof(line), fp) == NULL) {
+        fclose(fp);
+        return prefix + 1;
+    }
+
+    int existingID;
+    // Scan the first column (ID) of every row
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        if (sscanf(line, "%d,", &existingID) == 1) {
+
+            // If we are looking for a Hazmat ID and found an 8xxx ID
+            if (hasHazmat && existingID >= 8000) {
+                int serial = existingID - 8000;
+                if (serial > maxSerial) maxSerial = serial;
+            }
+            // If we are looking for a Standard ID and found a 1xxx ID
+            else if (!hasHazmat && existingID >= 1000 && existingID < 8000) {
+                int serial = existingID - 1000;
+                if (serial > maxSerial) maxSerial = serial;
+            }
+        }
+    }
+
+    fclose(fp);
+
+    // Return the prefix + the next available serial number
+    return prefix + (maxSerial + 1);
 }
 
 void createDriver() {
     int n;
     printf("\n========================================");
-    printf("\n     CREATE DRIVER RECORDS MODULE            ");
+    printf("\n     CREATE DRIVER RECORDS MODULE       ");
     printf("\n========================================\n");
     printf("\nEnter the No of Driver Records to Be Created: ");
     scanf("%d", &n);
+
     FILE *fp = fopen(DRIVERS_CSV, "a");
+    if (!fp) {
+        printf("Error: Could not open driver database.\n");
+        return;
+    }
+
+    // Use our universal helper to check for header
     if (isCsvEmpty(DRIVERS_CSV)) {
         fprintf(fp, "driver_id,name,phone,vehicle_id,available,suspended,hazmat,hours_today,max_hours\n");
     }
-    for (int i = 0; i < n; i++) {
-        printf("\nEnter the Driver %d's Name : ");
-        scanf("%[^\n]s", &drivers[i].name);
-        printf("\nEnter the Driver %d's Phone Number : ");
-        scanf("%[^\n]s", &drivers[i].phone);
-        printf("\nEnter the Driver %d's Assigned Vehicle ID : ");
-        scanf("%d", &drivers[i].assigned_vehicle_id);
-        printf("");
-// continue from here
 
+    for (int i = 0; i < n; i++) {
+        Driver d;
+        int hazChoice;
+
+        printf("\n--- Driver %d Details ---", i + 1);
+
+        printf("\nEnter Name: ");
+        scanf(" %[^\n]s", d.name); // Space before % clears input buffer
+
+        printf("Enter 10-Digit Phone Number: ");
+        scanf("%s", d.phone);
+
+        printf("Hazardous Handling Certified? (1=Yes, 0=No): ");
+        scanf("%d", &hazChoice);
+        d.has_hazmat_license = (hazChoice == 1);
+
+        // Generate ID based on the specialized sequence
+        d.driver_id = generateDriverID(d.has_hazmat_license);
+
+        printf("Enter Max Daily Working Hours: ");
+        scanf("%f", &d.max_daily_hours);
+
+        // System Defaults for new drivers
+        d.assigned_vehicle_id = 0;
+        d.is_available = true;
+        d.is_suspended = false;
+        d.hours_worked_today = 0.0f;
+
+        // Write to CSV
+        fprintf(fp, "%d,%s,%s,%d,%d,%d,%d,%.2f,%.2f\n",
+                d.driver_id,
+                d.name,
+                d.phone,
+                d.assigned_vehicle_id,
+                (int)d.is_available,
+                (int)d.is_suspended,
+                (int)d.has_hazmat_license,
+                d.hours_worked_today,
+                d.max_daily_hours);
+        fflush(fp);
+        printf("Success! Driver ID %d generated for %s.\n", d.driver_id, d.name);
     }
 }
-// ── Role-Specific Menus ────────────────────────────────────────────────────────
+int loadDriversFromCSV() {
+    FILE *fp = fopen(DRIVERS_CSV, "r");
+    if (!fp) return 0;
 
-void adminMenu(const char* adminName) { // Pass the name from userAUTH
-    int choice;
-    int select;
-    int total = loadBinsFromCSV(); // Check current load
+    char line[512];
+    if (fgets(line, sizeof(line), fp) == NULL) { // Skip header safely
+        fclose(fp);
+        return 0;
+    }
+
+    int count = 0;
+    // Added commas after %[^,] to clear them from the buffer
+    while (count < MAX_DRIVERS &&
+           fscanf(fp, "%d,%[^,],%[^,],%d,%d,%d,%d,%f,%f\n",
+                  &drivers[count].driver_id,
+                  drivers[count].name,
+                  drivers[count].phone,
+                  &drivers[count].assigned_vehicle_id,
+                  (int *)&drivers[count].is_available,
+                  (int *)&drivers[count].is_suspended,
+                  (int *)&drivers[count].has_hazmat_license,
+                  &drivers[count].hours_worked_today,
+                  &drivers[count].max_daily_hours) == 9) {
+        count++;
+                  }
+
+    fclose(fp);
+    return count;
+}
+
+void viewDrivers() {
+    printf("\n========================================");
+    printf("\n      VIEW ALL DRIVERS MODULE          ");
+    printf("\n========================================\n");
+
+    int total = loadDriversFromCSV();
+    if (total == 0) {
+        printf("No driver records found.\n");
+        return;
+    }
+
+    printf("%-10s %-15s %-12s %-10s %-8s %-10s\n",
+           "ID", "Name", "Phone", "Vehicle", "Hazmat", "Status");
+    printf("----------------------------------------------------------------------\n");
+
+    for (int i = 0; i < total; i++) {
+        printf("%-10d %-15s %-12s %-10d %-8s %-10s\n",
+               drivers[i].driver_id,
+               drivers[i].name,
+               drivers[i].phone,
+               drivers[i].assigned_vehicle_id,
+               drivers[i].has_hazmat_license ? "YES" : "NO",
+               drivers[i].is_suspended ? "SUSPENDED" : (drivers[i].is_available ? "READY" : "ON-ROUTE"));
+    }
+    printf("----------------------------------------------------------------------\n");
+}
+    // ── Role-Specific Menus ────────────────────────────────────────────────────────
+
+void adminMenu(const char* adminName) {
+    int choice, select;
+    int total = loadBinsFromCSV();
 
     while (1) {
-        printf("===========================================================\n");
-        printf("        SENTRABIN OS - Centralized Bin Operations       \n");
-        printf("===========================================================\n");
-        printf("\n  OPERATOR: %s", adminName);
-        printf("\n  DATABASE: %d Bins Loaded", total);
+        printf("\n===========================================================");
+        printf("\n        SENTRABIN OS - Centralized Bin Operations       ");
+        printf("\n===========================================================");
+        printf("\n  OPERATOR: %s | DATABASE: %d Bins Loaded", adminName, total);
         printf("\n------------------------------------------------");
         printf("\n1. BIN MANAGEMENT");
         printf("\n2. VEHICLE MANAGEMENT");
+        printf("\n3. DRIVER MANAGEMENT");
+        printf("\n4. EXIT");
         printf("\nEnter your choice: ");
         scanf("%d", &select);
+
         if (select == 1) {
-            printf("\n1. Create Bin Record");
-            printf("\n2. Identify Critical Bins");
+            printf("\n1. Create Bin Record\n2. Identify Critical Bins\n0. Back\nChoice: ");
+            scanf("%d", &choice);
+            if (choice == 1) createBin();
+            else if (choice == 2) identifyCriticalBins();
+        }
+        else if (select == 2) {
+            printf("\n1. Create Vehicle Record\n2. View Vehicles\n0. Back\nChoice: ");
+            scanf("%d", &choice);
+            if (choice == 1) createVehicle();
+            else if (choice == 2) viewVehicles();
+        }
+        else if (select == 3) { // FIXED: checking 'select' not 'choice'
+            printf("\n1. Create Driver Record\n2. View Driver Records\n0. Back\nChoice: ");
+            scanf("%d", &choice);
+            if (choice == 1) createDriver();
+            else if (choice == 2) viewDrivers();
+        }
+        else if (select == 4) {
+            printf("\nExiting Program. Goodbye!\n");
+            return;
+        }
+    }
+}
+
+    void netizenMenu() {
+        int choice;
+        while (1) {
+            printf("===========================================================\n");
+            printf("        SENTRABIN OS - Centralized Bin Operations       \n");
+            printf("===========================================================\n");
+            printf("\n1. View Local Bins (Critical Only)");
             printf("\n0. Logout");
-            printf("\n\nEnter Choice: ");
+            printf("\nEnter Choice: ");
 
             if (scanf("%d", &choice) != 1) {
                 while(getchar() != '\n');
                 continue;
             }
+
             switch (choice) {
-                case 1: createBin();           break;
-                case 2: identifyCriticalBins(); break;
-                case 0: return; // Logout
+                case 1: identifyCriticalBins(); break; // Netizens can see, but maybe not edit
+                case 0: return;
                 default: printf("Invalid choice.\n");
             }
-
-        }
-
-        if (select == 2) {
-            printf("\n1. Create Vehicle Record");
-            printf("\n2. View Vehicles");
-            printf("\n0. Logout");
-            printf("\n\nEnter Choice: ");
-
-            if (scanf("%d", &choice) != 1) {
-                while(getchar() != '\n');
-                continue;
-            }
-            switch (choice) {
-                case 1: createVehicle();           break;
-                case 2: viewVehicles(); break;
-                case 0: return; // Logout
-                default: printf("Invalid choice.\n");
-            }
-
-        }
-
-
-
-    }
-}
-
-void netizenMenu() {
-    int choice;
-    while (1) {
-        printf("===========================================================\n");
-        printf("        SENTRABIN OS - Centralized Bin Operations       \n");
-        printf("===========================================================\n");
-        printf("\n1. View Local Bins (Critical Only)");
-        printf("\n0. Logout");
-        printf("\nEnter Choice: ");
-
-        if (scanf("%d", &choice) != 1) {
-            while(getchar() != '\n');
-            continue;
-        }
-
-        switch (choice) {
-            case 1: identifyCriticalBins(); break; // Netizens can see, but maybe not edit
-            case 0: return;
-            default: printf("Invalid choice.\n");
         }
     }
-}
 
-// ── Auth Logic ─────────────────────────────────────────────────────────
+    // ── Auth Logic ─────────────────────────────────────────────────────────
 
-const char* userAUTH(char* outUsername) {
-    char pass[32];
+    const char* userAUTH(char* outUsername) {
+        char pass[32];
 
 
-    printf("==========================================\n");
-    printf("        SENTRABIN OS - SECURE LOGIN       \n");
-    printf("==========================================\n");
+        printf("==========================================\n");
+        printf("        SENTRABIN OS - SECURE LOGIN       \n");
+        printf("==========================================\n");
 
-    printf("\n  ENTER USERNAME: ");
-    scanf("%39s", outUsername); // Store it in the buffer passed from main
-    printf("  ENTER PASSCODE: ");
-    scanf("%31s", pass);
+        printf("\n  ENTER USERNAME: ");
+        scanf("%39s", outUsername); // Store it in the buffer passed from main
+        printf("  ENTER PASSCODE: ");
+        scanf("%31s", pass);
 
-    if (strcmp(pass, ADMIN_PASS) == 0) {
-        printf("\n[AUTH] Admin privileges granted to: %s\n", outUsername);
-        return "admin";
-    }
-    else if (strcmp(pass, NETIZEN_PASS) == 0) {
-        printf("\n[AUTH] Netizen access granted to: %s\n", outUsername);
-        return "netizen";
-    }
+        if (strcmp(pass, ADMIN_PASS) == 0) {
+            printf("\n[AUTH] Admin privileges granted to: %s\n", outUsername);
+            return "admin";
+        }
+        else if (strcmp(pass, NETIZEN_PASS) == 0) {
+            printf("\n[AUTH] Netizen access granted to: %s\n", outUsername);
+            return "netizen";
+        }
 
-    return "unauthorized";
-}
-
-// ── Main Entry Point ───────────────────────────────────────────────────────────
-
-int main() {
-    char username[32];
-    const char* role = userAUTH(username);
-
-    if (strcmp(role, "admin") == 0) {
-        adminMenu(username);
-    }
-    else if (strcmp(role, "netizen") == 0) {
-        netizenMenu(username);
-    }
-    else {
-        printf("\n[ERROR] Access Denied. Closing SENTRABIN OS...\n");
-        return 1;
+        return "unauthorized";
     }
 
-    printf("\nSession Ended. Goodbye!\n");
-    return 0;
+    // ── Main Entry Point ───────────────────────────────────────────────────────────
+
+    int main(){
+        char username[32];
+        const char* role = userAUTH(username);
+
+        if (strcmp(role, "admin") == 0) {
+            adminMenu(username);
+        }
+        else if (strcmp(role, "netizen") == 0) {
+            netizenMenu(username);
+        }
+        else {
+            printf("\n[ERROR] Access Denied. Closing SENTRABIN OS...\n");
+            return 1;
+        }
+
+        printf("\nSession Ended. Goodbye!\n");
+        return 0;
+
 }
