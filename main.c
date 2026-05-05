@@ -481,7 +481,7 @@ int loadBinsFromCSV() {
         printf("No bin database found.\n");
         return 0;
     }
-    printf("Opening file: %s\n", BINS_CSV);
+    printf("Loading Database:\n");
 
     char line[256];
     fgets(line, sizeof(line), fp); // skip header
@@ -968,11 +968,30 @@ void throwWaste() {
 
 void raiseComplaint() {
     long long int id;
+    int zone;
 
     int total = loadBinsFromCSV();
     if (total == 0) {
         printf("No bins available.\n");
         return;
+    }
+    printf("\nEnter Zone No. (1-20): ");
+    scanf("%d", &zone);
+    if (!zone || zone < 1 || zone > 20) {
+        printf("Invalid zone!\n");
+        return;
+    }
+    printf("\n========================================");
+    printf("\n       BIN DETAILS OF ZONE %d                 ", zone);
+    printf("\n========================================\n");
+    for (int i = 0; i < total; i++) {
+        if (bins[i].zone == zone) {
+            printf("ID: %lld | Type: %-10s | Fill: %5.1f%% | WPI: %6.2f\n",
+                       bins[i].bin_id,
+                       getWasteTypeString(bins[i].waste_type),
+                       bins[i].fill_level,
+                       bins[i].wpi);
+        }
     }
 
     printf("Enter Bin ID to raise complaint: ");
@@ -994,7 +1013,7 @@ void raiseComplaint() {
 
             if (bins[i].wpi > 100) bins[i].wpi = 100;
 
-            printf("✅ Complaint registered successfully!\n");
+            printf(" Complaint registered successfully!\n");
 
             saveBinsToCSV(total);
 
@@ -1052,7 +1071,7 @@ void suggestBestBin() {
         return;
     }
 
-    printf("\n🎯 Suggested Bin:\n");
+    printf("\n Suggested Bin:\n");
     printf("ID: %lld | Fill: %.1f%% | WPI: %.2f\n",
            bins[best].bin_id,
            bins[best].fill_level,
