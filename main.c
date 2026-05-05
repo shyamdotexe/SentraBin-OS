@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <ctype.h>
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 #define MAX_BINS 100
@@ -779,7 +780,7 @@ void viewDrivers() {
 //  WASTE CLASSIFICATION MODULE - USER
 // ══════════════════════════════════════════════════════════════════════════════
 // SANJAY'S PART
-//Hellojgjg
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  VEHICLE AND DRIVER ASSIGNMENT MODULE - ADMIN
@@ -871,12 +872,91 @@ void viewBinsByZone() {
         printf("No bins found in your zone.\n");
     }
 }
+void toUpperText(char text[]) {
+    for (int i = 0; text[i] != '\0'; i++) {
+        text[i] = (char)toupper((unsigned char)text[i]);
+    }
+}
 
+bool containsKeyword(const char *text, const char *keyword) {
+    return strstr(text, keyword) != NULL;
+}
+
+int classifyWasteByName(const char *originalItem) {
+    char item[100];
+
+    strncpy(item, originalItem, sizeof(item) - 1);
+    item[sizeof(item) - 1] = '\0';
+    toUpperText(item);
+
+    if (containsKeyword(item, "BATTERY") ||
+        containsKeyword(item, "CHEMICAL") ||
+        containsKeyword(item, "PAINT") ||
+        containsKeyword(item, "MEDICINE") ||
+        containsKeyword(item, "MEDICAL") ||
+        containsKeyword(item, "SYRINGE") ||
+        containsKeyword(item, "E-WASTE") ||
+        containsKeyword(item, "EWASTE") ||
+        containsKeyword(item, "ELECTRONIC") ||
+        containsKeyword(item, "BULB")) {
+        return HAZARDOUS;
+    }
+
+    if (containsKeyword(item, "FOOD") ||
+        containsKeyword(item, "VEGETABLE") ||
+        containsKeyword(item, "FRUIT") ||
+        containsKeyword(item, "PEEL") ||
+        containsKeyword(item, "LEFTOVER") ||
+        containsKeyword(item, "TEA") ||
+        containsKeyword(item, "COFFEE") ||
+        containsKeyword(item, "LEAF") ||
+        containsKeyword(item, "LEAVES") ||
+        containsKeyword(item, "ORGANIC")) {
+        return WET;
+    }
+
+    if (containsKeyword(item, "PAPER") ||
+        containsKeyword(item, "CARDBOARD") ||
+        containsKeyword(item, "PLASTIC") ||
+        containsKeyword(item, "BOTTLE") ||
+        containsKeyword(item, "CAN") ||
+        containsKeyword(item, "METAL") ||
+        containsKeyword(item, "GLASS") ||
+        containsKeyword(item, "CLOTH") ||
+        containsKeyword(item, "WOOD")) {
+        return DRY;
+    }
+
+    if (containsKeyword(item, "SOILED") ||
+        containsKeyword(item, "CONTAMINATED") ||
+        containsKeyword(item, "DIRTY") ||
+        containsKeyword(item, "WRAPPER") ||
+        containsKeyword(item, "PACKAGING") ||
+        containsKeyword(item, "SANITARY")) {
+        return MIXED;
+    }
+
+    return MIXED;
+}
 void throwWaste() {
-    int zone, type;
+    int zone, type, confirm;
     float waste;
+    char itemName[100];
 
-    printf("Enter your zone: ");
+    printf("\n========================================");
+    printf("\n          THROW WASTE MODULE            ");
+    printf("\n========================================\n");
+
+    printf("Enter waste item name: ");
+    scanf(" %99[^\n]", itemName);
+
+    type = classifyWasteByName(itemName);
+
+    printf("\nWaste Item      : %s\n", itemName);
+    printf("Classification  : %s\n", getWasteTypeString(type));
+    printf("Recommended Bin : %s Bin\n", getWasteTypeString(type));
+
+    printf("\nEnter your zone: ");
     if (scanf("%d", &zone) != 1) {
         while (getchar() != '\n');
         printf("Invalid input!\n");
@@ -888,13 +968,6 @@ void throwWaste() {
         return;
     }
 
-    printf("Select Waste Type (1-DRY, 2-WET, 3-MIXED, 4-HAZARDOUS): ");
-    if (scanf("%d", &type) != 1 || type < 1 || type > 4) {
-        while (getchar() != '\n');
-        printf("Invalid waste type!\n");
-        return;
-    }
-
     int total = loadBinsFromCSV();
     if (total == 0) {
         printf("No bins available.\n");
@@ -903,31 +976,55 @@ void throwWaste() {
 
     int found = 0;
 
-    printf("\nAvailable bins (with free capacity):\n");
+    printf("\nAvailable %s bins in Zone %d:\n",
+           getWasteTypeString(type), zone);
+
     for (int i = 0; i < total; i++) {
         if (bins[i].zone == zone &&
             bins[i].waste_type == type &&
             bins[i].fill_level < 100.0f) {
 
-            printf("ID: %lld | Fill: %.1f%% | Free: %.1f%%\n",
+            printf("ID: %lld | Fill: %.1f%% | Free: %.1f%% | WPI: %.2f\n",
                    bins[i].bin_id,
                    bins[i].fill_level,
-                   100.0f - bins[i].fill_level);
+                   100.0f - bins[i].fill_level,
+                   bins[i].wpi);
 
             found = 1;
         }
     }
 
     if (!found) {
-        printf("No bins with available capacity found!\n");
+        printf("No suitable %s bin with available capacity found in this zone!\n",
+               getWasteTypeString(type));
+        return;
+    }
+
+    printf("\nDid you throw the waste in one of these bins?");
+    printf("\n1. Yes");
+    printf("\n2. No");
+    printf("\nChoice: ");
+
+    if (scanf("%d", &confirm) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input!\n");
+        return;
+    }
+
+    if (confirm != 1) {
+        printf("No bin updated. Returning to menu.\n");
         return;
     }
 
     long long int id;
-    printf("Enter Bin ID: ");
-    scanf("%lld", &id);
+    printf("Enter Bin ID used: ");
+    if (scanf("%lld", &id) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid Bin ID!\n");
+        return;
+    }
 
-    printf("Enter waste amount (%%): ");
+    printf("Enter waste amount to add in fill percentage: ");
     if (scanf("%f", &waste) != 1 || waste <= 0) {
         while (getchar() != '\n');
         printf("Invalid waste amount!\n");
@@ -938,7 +1035,7 @@ void throwWaste() {
         if (bins[i].bin_id == id) {
 
             if (bins[i].zone != zone || bins[i].waste_type != type) {
-                printf("Wrong bin selected! Please choose from the list.\n");
+                printf("Wrong bin selected! Please choose from the displayed list.\n");
                 return;
             }
 
@@ -948,31 +1045,56 @@ void throwWaste() {
             }
 
             if (bins[i].fill_level + waste <= 100.0f) {
+                float oldFill = bins[i].fill_level;
+
                 bins[i].fill_level += waste;
                 bins[i].wpi = computeWPI(bins[i].fill_level, bins[i].waste_type);
 
-                printf("Waste added successfully!\n");
-
                 saveBinsToCSV(total);
+
+                printf("\nWaste added successfully!\n");
+                printf("Bin ID   : %lld\n", bins[i].bin_id);
+                printf("Old Fill : %.1f%%\n", oldFill);
+                printf("New Fill : %.1f%%\n", bins[i].fill_level);
+                printf("New WPI  : %.2f\n", bins[i].wpi);
 
             } else {
                 printf("Not enough space in this bin!\n");
                 printf("Available space: %.1f%%\n", 100.0f - bins[i].fill_level);
             }
+
             return;
         }
     }
 
     printf("Invalid Bin ID!\n");
 }
-
 void raiseComplaint() {
     long long int id;
+    int zone;
 
     int total = loadBinsFromCSV();
     if (total == 0) {
         printf("No bins available.\n");
         return;
+    }
+    printf("\nEnter Zone No. (1-20): ");
+    scanf("%d", &zone);
+    if (!zone || zone < 1 || zone > 20) {
+        printf("Invalid zone!\n");
+        return;
+    }
+    printf("\n========================================");
+    printf("\n       BIN DETAILS OF ZONE %d                 ", zone);
+    printf("\n========================================\n");
+    for (int i = 0; i < total; i++) {
+        if (bins[i].zone == zone) {
+            printf("ID: %lld | Type: %-10s | Fill: %5.1f%% | WPI: %6.2f\n",
+                       bins[i].bin_id,
+                       getWasteTypeString(bins[i].waste_type),
+                       bins[i].fill_level,
+                       bins[i].wpi);
+        }
     }
 
     printf("Enter Bin ID to raise complaint: ");
@@ -994,7 +1116,7 @@ void raiseComplaint() {
 
             if (bins[i].wpi > 100) bins[i].wpi = 100;
 
-            printf("✅ Complaint registered successfully!\n");
+            printf(" Complaint registered successfully!\n");
 
             saveBinsToCSV(total);
 
@@ -1119,6 +1241,7 @@ void netizenMenu(const char *username) {
             case 0: return;
             default: printf("Invalid choice!\n");
         }
+
     }
 }
 
