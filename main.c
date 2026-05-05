@@ -12,6 +12,7 @@
 #define BINS_CSV "bins.csv"
 #define VEHICLES_CSV "vehicle.csv"
 #define DRIVERS_CSV "drivers.csv"
+#define COMPLAINTS_CSV "complaintslog.csv"
 #define NETIZEN_PASS "guest@123"
 
 // ── Waste Types ────────────────────────────────────────────────────────────────
@@ -71,8 +72,34 @@ typedef struct{
     float hours_worked_today;
     float max_daily_hours;
 } Driver;
+// ══════════════════════════════════════════════════════════════════════════════
+//  COMPLAINTS STRUCTURE
+// ══════════════════════════════════════════════════════════════════════════════
+typedef struct {
+    int complaint_id;
+    long long int bin_id;
+    int zone;
+    char status[15]; // "OPEN" or "RESOLVED"
+} Complaint;
 
+int generateComplaintID() {
+    FILE *fp = fopen(COMPLAINTS_CSV, "r");
+    if (!fp) return 1;
 
+    int id, maxID = 0;
+    char line[256];
+
+    fgets(line, sizeof(line), fp); // skip header
+
+    while (fgets(line, sizeof(line), fp)) {
+        if (sscanf(line, "%d,", &id) == 1) {
+            if (id > maxID) maxID = id;
+        }
+    }
+
+    fclose(fp);
+    return maxID + 1;
+}
 // ── Global Objects ──────────────────────────────────────────────────────────────
 Bin bins[MAX_BINS];
 Vehicle vehicles[MAX_VEHICLES];
@@ -482,7 +509,6 @@ int loadBinsFromCSV() {
         printf("No bin database found.\n");
         return 0;
     }
-    printf("Loading Database:\n");
 
     char line[256];
     fgets(line, sizeof(line), fp); // skip header
@@ -790,11 +816,104 @@ void viewDrivers() {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  ROUTE OPTIMIZATION MODULE - ADMIN
+//  COMPLAINT MANAGEMENT MODULE
 // ══════════════════════════════════════════════════════════════════════════════
-// SHYAM'S PART
 
+void resolveComplaint() {
+    int id;
 
+    printf("Enter Complaint ID to resolve: ");
+    if (scanf("%d", &id) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input!\n");
+        return;
+    }
+
+    FILE *fp = fopen(COMPLAINTS_CSV, "r");
+    if (!fp) {
+        printf("No complaint file found.\n");
+        return;
+    }
+
+    FILE *temp = fopen("temp.csv", "w");
+    if (!temp) {
+        fclose(fp);
+        printf("Error creating temp file.\n");
+        return;
+    }
+
+    char line[256];
+    fgets(line, sizeof(line), fp); // header
+    fprintf(temp, "%s", line);
+
+    int found = 0;
+
+    while (fgets(line, sizeof(line), fp)) {
+        Complaint c;
+
+        if (sscanf(line, "%d,%lld,%d,%s",
+                   &c.complaint_id,
+                   &c.bin_id,
+                   &c.zone,
+                   c.status) == 4) {
+
+            if (c.complaint_id == id) {
+                strcpy(c.status, "RESOLVED");
+                found = 1;
+            }
+
+            fprintf(temp, "%d,%lld,%d,%s\n",
+                    c.complaint_id,
+                    c.bin_id,
+                    c.zone,
+                    c.status);
+                   }
+    }
+
+    fclose(fp);
+    fclose(temp);
+
+    remove(COMPLAINTS_CSV);
+    rename("temp.csv", COMPLAINTS_CSV);
+
+    if (found)
+        printf(" Complaint marked as RESOLVED.\n");
+    else
+        printf("Complaint ID not found.\n");
+}
+void viewComplaints() {
+    FILE *fp = fopen(COMPLAINTS_CSV, "r");
+    if (!fp) {
+        printf("No complaints found.\n");
+        return;
+    }
+
+    char line[256];
+    fgets(line, sizeof(line), fp); // skip header
+
+    printf("\n--- COMPLAINTS LOG ---\n");
+    printf("%-10s %-15s %-6s %-10s\n", "ID", "Bin ID", "Zone", "Status");
+    printf("-------------------------------------------------\n");
+
+    while (fgets(line, sizeof(line), fp)) {
+        Complaint c;
+
+        if (sscanf(line, "%d,%lld,%d,%s",
+                   &c.complaint_id,
+                   &c.bin_id,
+                   &c.zone,
+                   c.status) == 4) {
+
+            printf("%-10d %-15lld %-6d %-10s\n",
+                   c.complaint_id,
+                   c.bin_id,
+                   c.zone,
+                   c.status);
+                   }
+    }
+
+    fclose(fp);
+}
 // ══════════════════════════════════════════════════════════════════════════════
 //  USER MODULE
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1074,26 +1193,41 @@ void raiseComplaint() {
         printf("No bins available.\n");
         return;
     }
+
     printf("\nEnter Zone No. (1-20): ");
-    scanf("%d", &zone);
-    if (!zone || zone < 1 || zone > 20) {
+    if (scanf("%d", &zone) != 1) {
+        while (getchar() != '\n');
+        printf("Invalid input!\n");
+        return;
+    }
+
+    if (zone < 1 || zone > 20) {
         printf("Invalid zone!\n");
         return;
     }
+
     printf("\n========================================");
-    printf("\n       BIN DETAILS OF ZONE %d                 ", zone);
+    printf("\n       BIN DETAILS OF ZONE %d", zone);
     printf("\n========================================\n");
+
+    int foundZone = 0;
     for (int i = 0; i < total; i++) {
         if (bins[i].zone == zone) {
             printf("ID: %lld | Type: %-10s | Fill: %5.1f%% | WPI: %6.2f\n",
-                       bins[i].bin_id,
-                       getWasteTypeString(bins[i].waste_type),
-                       bins[i].fill_level,
-                       bins[i].wpi);
+                   bins[i].bin_id,
+                   getWasteTypeString(bins[i].waste_type),
+                   bins[i].fill_level,
+                   bins[i].wpi);
+            foundZone = 1;
         }
     }
 
-    printf("Enter Bin ID to raise complaint: ");
+    if (!foundZone) {
+        printf("No bins found in this zone.\n");
+        return;
+    }
+
+    printf("\nEnter Bin ID to raise complaint: ");
     if (scanf("%lld", &id) != 1) {
         while (getchar() != '\n');
         printf("Invalid input!\n");
@@ -1103,20 +1237,43 @@ void raiseComplaint() {
     for (int i = 0; i < total; i++) {
         if (bins[i].bin_id == id) {
 
-            // Always allow complaint, but vary impact
-            if (bins[i].fill_level >= 85) {
-                bins[i].wpi += 25;
-            } else {
-                bins[i].wpi += 10;
+            // 🔒 Ensure bin belongs to selected zone
+            if (bins[i].zone != zone) {
+                printf("This bin does not belong to the selected zone!\n");
+                return;
             }
+
+            // 📈 WPI impact
+            if (bins[i].fill_level >= 85)
+                bins[i].wpi += 25;
+            else
+                bins[i].wpi += 10;
 
             if (bins[i].wpi > 100) bins[i].wpi = 100;
 
-            printf(" Complaint registered successfully!\n");
-
             saveBinsToCSV(total);
 
+            // 🧾 LOG COMPLAINT TO CSV
+            FILE *fp = fopen(COMPLAINTS_CSV, "a");
+            if (!fp) {
+                printf("Error opening complaints log!\n");
+                return;
+            }
 
+            if (isCsvEmpty(COMPLAINTS_CSV)) {
+                fprintf(fp, "complaint_id,bin_id,zone,status\n");
+            }
+
+            int cid = generateComplaintID();
+
+            fprintf(fp, "%d,%lld,%d,OPEN\n",
+                    cid,
+                    bins[i].bin_id,
+                    bins[i].zone);
+
+            fclose(fp);
+
+            printf("Complaint registered successfully! ID: %d\n", cid);
 
             return;
         }
@@ -1194,7 +1351,8 @@ void adminMenu(const char* adminName) {
         printf("\n1. BIN MANAGEMENT");
         printf("\n2. VEHICLE MANAGEMENT");
         printf("\n3. DRIVER MANAGEMENT");
-        printf("\n4. EXIT");
+        printf("\n4. COMPLAINT MANAGEMENT");
+        printf("\n5. EXIT");
         printf("\nEnter your choice: ");
         scanf("%d", &select);
 
@@ -1216,7 +1374,14 @@ void adminMenu(const char* adminName) {
             if (choice == 1) createDriver();
             else if (choice == 2) viewDrivers();
         }
-        else if (select == 4) return;
+        else if (select == 4) {
+            printf("\n1. View Complaints\n2. Resolve Complaint\n0. Back\nChoice: ");
+            scanf("%d", &choice);
+
+            if (choice == 1) viewComplaints();
+            else if (choice == 2) resolveComplaint();
+        }
+        else if (select == 5) return;
     }
 }
 
