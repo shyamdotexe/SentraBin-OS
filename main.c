@@ -135,6 +135,7 @@ int parseWasteType(const char* str) {
     if (strcmp(str, "HAZARDOUS") == 0) return HAZARDOUS;
     return DRY; // safe default
 }
+//
 
 float computeWPI(float fill, int wasteType) {
     int typefactor;
