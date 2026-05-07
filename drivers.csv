@@ -1,0 +1,3 @@
+driver_id,name,phone,vehicle_id,available,suspended,hazmat,hours_today,max_hours
+8001,Surya,9090808900,1,1,0,1,8.00,12.00
+1001,SANJAY,9876543210,2,1,0,0,5.50,10.00
