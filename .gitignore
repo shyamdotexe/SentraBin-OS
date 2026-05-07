@@ -1,2 +1,14 @@
+# Executables
+*.exe
+
+# CLion / build
+cmake-build-debug/
+cmake-build-release/
+
+# IDE files
+.idea/
 .vscode/
-CMakeLists.txt
+
+# Temporary
+*.o
+*.out
