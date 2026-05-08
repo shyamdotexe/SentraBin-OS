@@ -3,3 +3,5 @@ complaint_id,bin_id,zone,username,complaint_text,escalation_level,emergency_trig
 2,100002,1,NETIZEN,Foul Smell,1,0,PENDING
 3,100001,3,NETIZEN,Bad Odour,1,0,PENDING
 4,100020,2,NETIZEN,Foul Smell,1,0,PENDING
+5,100003,5,NETIZEN,Overflow,1,1,PENDING
+6,100001,3,NETIZEN,overflow,1,0,PENDING

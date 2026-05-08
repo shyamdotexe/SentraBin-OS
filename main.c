@@ -96,61 +96,31 @@ typedef struct{
     float max_daily_hours;
 } Driver;
 
-// ═════════════════════════════════════════════════════════════════════
-// ZONE STRUCTURE
-// ═════════════════════════════════════════════════════════════════════
-
 typedef struct {
     int zone_id;
     int total_bins;
     int critical_bins;
 } Zone;
 
-// =====================================================================
-// COMPLAINT STRUCTURE
-// =====================================================================
-
 typedef struct {
-
     int complaint_id;
-
     long long int bin_id;
-
     int zone;
-
     char username[40];
-
     char complaint_text[150];
-
     int escalation_level;
-
     bool emergency_triggered;
-
     char status[20];
-
 } Complaint;
 
-// ═════════════════════════════════════════════════════════════════════
-// EMERGENCY STRUCTURE
-// ═════════════════════════════════════════════════════════════════════
-
 typedef struct {
-
     int emergency_id;
-
     int vehicle_id;
     int driver_id;
     int zone;
-
     char emergency_type[50];
-
     char description[150];
-
 } Emergency;
-
-// ═════════════════════════════════════════════════════════════════════
-// ROUTE STRUCTURE
-// ═════════════════════════════════════════════════════════════════════
 
 typedef struct {
     int route_id;
@@ -384,10 +354,6 @@ int generateComplaintID() {
 
     return maxID + 1;
 }
-
-// ═════════════════════════════════════════════════════════════════════
-// SAVE DRIVERS TO CSV
-// ═════════════════════════════════════════════════════════════════════
 
 void saveDriversToCSV(int totalDrivers) {
 
@@ -949,7 +915,7 @@ vehicles[i].current_load,
 vehicles[i].registration,
 vehicles[i].current_x,
 vehicles[i].current_y,
-vehicles[i].route_bin_count   // ✅ NOW ACTUALLY WRITTEN
+vehicles[i].route_bin_count
 );
     }
 
@@ -1003,7 +969,7 @@ int loadVehiclesFromCSV() {
         if (matched == 15) {
             count++;
         } else {
-            printf("❌ Skipped (parsed %d fields): %s\n", matched, line);
+            printf("Skipped (parsed %d fields): %s\n", matched, line);
         }
            }
 
@@ -1059,6 +1025,20 @@ void viewVehicles() {
     printf("  [=] In Use     : %d\n", in_use_count);
     printf("  [!] Maintenance: %d\n", maintenance_count);
     printf("========================================\n");
+}
+void refuelVehicle(int v) {
+
+    printf("\nVehicle %d refuelling at HUB...",
+           vehicles[v].vehicle_id);
+
+    vehicles[v].current_fuel =
+        vehicles[v].fuel_tank_capacity;
+
+    vehicles[v].current_x = HUB_X;
+    vehicles[v].current_y = HUB_Y;
+
+    printf(" DONE (Fuel = %.2f)\n",
+           vehicles[v].current_fuel);
 }
 // ══════════════════════════════════════════════════════════════════════════════
 //  BIN MANAGEMENT MODULE
@@ -1183,8 +1163,6 @@ void createBin() {
         bins[i].collected_today = false;
         bins[i].wpi        = computeWPI(bins[i].fill_level, bins[i].waste_type);
         strcpy(bins[i].last_collection, "N/A");
-
-        // ── FIX: waste_type written as string; bin_id uses %lld ───────────────
         fprintf(fp,
 "%lld,%d,%s,%.2f,%.2f,%.2f,%d,%d,%d,%s,%d\n",
 bins[i].bin_id,
@@ -1215,7 +1193,7 @@ int loadBinsFromCSV() {
     FILE *fp = fopen("bins.csv", "r");
 
     if (!fp) {
-        printf("❌ ERROR: bins.csv not found!\n");
+        printf("ERROR: bins.csv not found!\n");
         return 0;
     }
 
@@ -1235,7 +1213,6 @@ int loadBinsFromCSV() {
 
         if (count >= MAX_BINS) break;
 
-        // 🔥 Remove newline (VERY IMPORTANT)
         line[strcspn(line, "\n")] = 0;
 
         int result = sscanf(line,
@@ -1254,13 +1231,13 @@ int loadBinsFromCSV() {
         );
 
         if (result != 11) {
-            printf("❌ Parse failed (%d fields): %s\n", result, line);
+            printf("Parse failed (%d fields): %s\n", result, line);
             continue;
         }
 
         bins[count].waste_type = parseWasteType(wasteTypeStr);
         bins[count].collected_today = (bool)collected;
-
+        bins[count].priority = PRI_LOW;
         count++;
     }
 
@@ -1282,11 +1259,11 @@ void sortBinsByPriority(int totalBins) {
     }
 }
 int identifyCriticalBins() {
+
     printf("\n========================================");
     printf("\n    IDENTIFY CRITICAL BINS MODULE       ");
     printf("\n========================================\n");
 
-    // Step 1 – load from CSV
     int totalBins = loadBinsFromCSV();
     if (totalBins == 0) {
         printf("No bins available.\n");
@@ -1297,44 +1274,42 @@ int identifyCriticalBins() {
     int medCount      = 0;
     int lowCount      = 0;
 
-    // Step 2 – compute WPI + assign priority (follows your flowchart exactly)
     for (int i = 0; i < totalBins; i++) {
 
-        // Already collected today → LOW, skip further checks
-        if (bins[i].collected_today) {
-            bins[i].priority = PRI_LOW;
-            lowCount++;
-            continue;
-        }
 
-        bins[i].wpi = computeWPI(bins[i].fill_level, bins[i].waste_type);
+        bins[i].wpi = computeWPI(
+            bins[i].fill_level,
+            bins[i].waste_type
+        );
 
         bool fillHigh = (bins[i].fill_level >= FILL_THRESH_HIGH);
         bool wpiHigh  = (bins[i].wpi        >= WPI_THRESH_HIGH);
         bool fillMed  = (bins[i].fill_level >= FILL_THRESH_MED);
         bool wpiMed   = (bins[i].wpi        >= WPI_THRESH_MED);
 
+
         if (fillHigh || wpiHigh) {
             bins[i].priority = PRI_HIGH;
             criticalCount++;
-        } else if (fillMed || wpiMed) {
+        }
+        else if (fillMed || wpiMed) {
             bins[i].priority = PRI_MED;
             medCount++;
-        } else {
+        }
+        else {
             bins[i].priority = PRI_LOW;
             lowCount++;
         }
     }
 
-    // Step 3 – sort HIGH → MED → LOW
     sortBinsByPriority(totalBins);
 
-    // Step 4 – display report table
     printf("\n%-14s %-6s %-10s %-10s %-7s %-8s  %s\n",
            "Bin ID", "Zone", "WasteType", "Fill(%)", "WPI", "Priority", "Status");
     printf("------------------------------------------------------------------------\n");
 
     for (int i = 0; i < totalBins; i++) {
+
         printf("%-14lld %-6d %-10s %-10.1f %-7.2f %-8s  ",
                bins[i].bin_id,
                bins[i].zone,
@@ -1342,6 +1317,7 @@ int identifyCriticalBins() {
                bins[i].fill_level,
                bins[i].wpi,
                getPriorityString(bins[i].priority));
+
 
         if (bins[i].collected_today)
             printf("[Already Collected]");
@@ -1377,7 +1353,7 @@ int generateDriverID(bool hasHazmat) {
     int prefix = hasHazmat ? 8000 : 1000;
     int maxSerial = 0;
 
-    // If the file doesn't exist yet, start with the first ID (e.g., 1001 or 8001)
+
     if (fp == NULL) {
         return prefix + 1;
     }
@@ -1454,7 +1430,7 @@ void createDriver() {
         printf("\n--- Driver %d Details ---", i + 1);
 
         printf("\nEnter Name: ");
-        scanf(" %[^\n]", d.name); // Space before % clears input buffer
+        scanf(" %[^\n]", d.name);
 
         printf("Enter 10-Digit Phone Number: ");
         scanf("%10s", d.phone);
@@ -1621,7 +1597,7 @@ int loadDriversFromCSV() {
     }
 
     int count = 0;
-    // Added commas after %[^,] to clear them from the buffer
+
     while (count < MAX_DRIVERS &&
            fscanf(fp, "%d,%[^,],%[^,],%d,%d,%d,%d,%f,%f\n",
                   &drivers[count].driver_id,
@@ -1701,8 +1677,46 @@ void optimizeMultiBinTrip(
                 if (vehicles[v].assigned_driver_id == 0)
                     continue;
 
-                if (vehicles[v].current_fuel <= 0)
+                if (vehicles[v].current_fuel <= 0) {
+
+                    printf("\nVehicle %d has EMPTY fuel.",
+                           vehicles[v].vehicle_id);
+
+                    //  Send vehicle to HUB
+                    vehicles[v].current_x = HUB_X;
+                    vehicles[v].current_y = HUB_Y;
+
+                    //  Dispatch backup vehicle
+                    int backup = findBackupVehicle(
+                        vehicles[v].zone,
+                        totalVehicles
+                    );
+
+                    if (backup != -1 && backup != v) {
+
+                        printf("\nBackup Vehicle %d dispatched.",
+                               vehicles[backup].vehicle_id);
+
+                        // Ensure backup is ready
+                        if (vehicles[backup].current_fuel <= 0) {
+                            refuelVehicle(backup);
+                        }
+
+                        vehicles[backup].is_available = false;
+                    }
+                    else {
+                        printf("\n⚠ No backup vehicle available!");
+                    }
+
+                    //  Refuel current vehicle (using your module)
+                    refuelVehicle(v);
+
+                    //  Mark vehicle ready again
+                    vehicles[v].is_available = true;
+
+                    //  Skip this iteration (backup will handle)
                     continue;
+                }
 
                 vehicles[v].is_available = false;
 
@@ -1805,32 +1819,52 @@ futureDistance);
 
                     // LOW FUEL
 
-                    if (futureFuel >
-                        vehicles[v].current_fuel) {
+                    // Predictive fuel guard (with margin)
+                    if (futureFuel > vehicles[v].current_fuel * 0.9f) {
 
-                        printf(
-                        "\nVehicle %d returned to HUB due to low fuel.",
-                        vehicles[v].vehicle_id);
+                        printf("\nVehicle %d cannot continue (insufficient fuel).",
+                               vehicles[v].vehicle_id);
 
+                        // 1) Send current vehicle to HUB
                         vehicles[v].current_x = HUB_X;
                         vehicles[v].current_y = HUB_Y;
 
-                        vehicles[v].is_available = true;
+                        // 2) Dispatch a READY backup (prefer same zone)
+                        int backupVehicle = findBackupVehicle(vehicles[v].zone, totalVehicles);
 
-                        int backupVehicle =
-                        findBackupVehicle(
-                            vehicles[v].zone,
-                            totalVehicles
-                        );
+                        if (backupVehicle != -1 && backupVehicle != v) {
 
-                        if (backupVehicle != -1 &&
-                            backupVehicle != v) {
+                            // Make sure backup is actually usable
+                            if (vehicles[backupVehicle].under_maintenance ||
+                                vehicles[backupVehicle].assigned_driver_id == 0) {
 
-                            printf(
-                            "\nBackup Vehicle %d dispatched.",
-                            vehicles[backupVehicle].vehicle_id);
+                                printf("\nBackup Vehicle %d not eligible (maintenance/driver).",
+                                       vehicles[backupVehicle].vehicle_id);
+
+                                } else {
+
+                                    //  Ensure backup has fuel via your module
+                                    if (vehicles[backupVehicle].current_fuel <= 0) {
+                                        refuelVehicle(backupVehicle);
+                                    }
+
+                                    vehicles[backupVehicle].is_available = false;
+
+                                    printf("\nBackup Vehicle %d dispatched.",
+                                           vehicles[backupVehicle].vehicle_id);
+                                }
+
+                        } else {
+                            printf("\nNo backup vehicle available!");
                         }
 
+                        // 3) Refuel current vehicle via module
+                        refuelVehicle(v);
+
+                        // 4) Mark it ready again at HUB
+                        vehicles[v].is_available = true;
+
+                        // 5) End this vehicle's current trip; backup (if any) continues
                         break;
                     }
 
@@ -1977,42 +2011,40 @@ printf(
 
 void runRouteOptimization() {
 
-    int totalBins = loadBinsFromCSV();
-
+    // Step 1: Load data
+    int totalBins     = loadBinsFromCSV();
     int totalVehicles = loadVehiclesFromCSV();
+    int totalDrivers  = loadDriversFromCSV();
 
-    int totalDrivers = loadDriversFromCSV();
-
-    if (totalBins == 0 ||
-        totalVehicles == 0 ||
-        totalDrivers == 0) {
-
+    if (totalBins == 0 || totalVehicles == 0 || totalDrivers == 0) {
         printf("Insufficient data.\n");
         return;
     }
+
+    // Step 2: Reset temporary flags (simulation only)
     for (int i = 0; i < totalBins; i++) {
+        bins[i].collected_today = false;
+    }
 
-    bins[i].collected_today = false;
-}
+    // Step 3: Compute priorities WITHOUT reloading bins
+    // IMPORTANT: use a version that DOES NOT call loadBinsFromCSV()
+    identifyCriticalBins();  // make sure this does NOT reload internally
 
-    identifyCriticalBins();
-
+    // Step 4: Open routes file
     bool empty = isCsvEmpty(ROUTES_CSV);
 
     FILE *fp = fopen(ROUTES_CSV, "a");
-
     if (!fp) {
-
         printf("Cannot open routes file.\n");
         return;
     }
 
     if (empty) {
-
         fprintf(fp,
         "route_id,vehicle_id,driver_id,zone,total_distance,total_fuel,bins_collected\n");
     }
 
+    // Step 5: Run optimization
     int routeID = generateRouteID();
 
     optimizeMultiBinTrip(
@@ -2025,10 +2057,7 @@ void runRouteOptimization() {
 
     fclose(fp);
 
-    saveBinsToCSV(totalBins);
-
     saveVehiclesToCSV(totalVehicles);
-
     saveDriversToCSV(totalDrivers);
 
     printf("\nDynamic Route Optimization Completed.\n");
@@ -2040,21 +2069,17 @@ void runRouteOptimization() {
 
 void emergencyHandler(long long int emergencyBinID)
 {
-    int totalBins = loadBinsFromCSV();
+    int totalBins     = loadBinsFromCSV();
     int totalVehicles = loadVehiclesFromCSV();
-    int totalDrivers = loadDriversFromCSV();
+    int totalDrivers  = loadDriversFromCSV();
 
-    if (totalBins == 0 ||
-        totalVehicles == 0 ||
-        totalDrivers == 0)
+    if (totalBins == 0 || totalVehicles == 0 || totalDrivers == 0)
     {
         printf("Insufficient data for emergency handling.\n");
         return;
     }
 
     int emergencyBinIndex = -1;
-
-    // FIND EMERGENCY BIN
 
     for (int i = 0; i < totalBins; i++)
     {
@@ -2075,313 +2100,146 @@ void emergencyHandler(long long int emergencyBinID)
     printf("\n        EMERGENCY HANDLER ACTIVE        ");
     printf("\n========================================\n");
 
-    printf("Emergency Bin ID : %lld\n",
-           bins[emergencyBinIndex].bin_id);
-
-    printf("Zone             : %d\n",
-           bins[emergencyBinIndex].zone);
-
-    printf("Waste Type       : %s\n",
-           getWasteTypeString(
-               bins[emergencyBinIndex].waste_type));
-
-    printf("Fill Level       : %.2f%%\n",
-           bins[emergencyBinIndex].fill_level);
-
-    printf("Priority         : %s\n",
-           getPriorityString(
-               bins[emergencyBinIndex].priority));
-
-    printf("WPI              : %.2f\n",
-           bins[emergencyBinIndex].wpi);
-
-    // ───────────────────────────────────────
-    // FIND SUITABLE VEHICLE
-    // ───────────────────────────────────────
+    printf("Emergency Bin ID : %lld\n", bins[emergencyBinIndex].bin_id);
+    printf("Zone             : %d\n", bins[emergencyBinIndex].zone);
+    printf("Waste Type       : %s\n", getWasteTypeString(bins[emergencyBinIndex].waste_type));
+    printf("Fill Level       : %.2f%%\n", bins[emergencyBinIndex].fill_level);
+    printf("WPI              : %.2f\n", bins[emergencyBinIndex].wpi);
 
     int selectedVehicle = -1;
-
-    int minimumDistance = 999999;
+    int bestScore = 999999;
 
     for (int i = 0; i < totalVehicles; i++)
     {
-        // VEHICLE MUST BE AVAILABLE
+        if (!vehicles[i].is_available) continue;
+        if (vehicles[i].under_maintenance) continue;
 
-        if (!vehicles[i].is_available)
-            continue;
-
-        // VEHICLE MUST NOT BE UNDER MAINTENANCE
-
-        if (vehicles[i].under_maintenance)
-            continue;
-
-        // VEHICLE MUST HAVE DRIVER
-
-        if (vehicles[i].assigned_driver_id == 0)
-            continue;
-
-        // VEHICLE MUST HAVE FUEL
 
         if (vehicles[i].current_fuel <= 0)
-            continue;
+            refuelVehicle(i);
 
-        // VEHICLE MUST BELONG TO SAME ZONE
+        if (vehicles[i].assigned_driver_id == 0) continue;
 
-        if (vehicles[i].zone !=
-            bins[emergencyBinIndex].zone)
-            continue;
-
-        // VEHICLE LOAD LIMIT
-
-        if (vehicles[i].current_load >=
-            vehicles[i].max_capacity)
-            continue;
-
-        // HAZARDOUS BIN REQUIRES COMPACTOR
-
-        if (bins[emergencyBinIndex].waste_type ==
-            HAZARDOUS)
+        int driverIndex = -1;
+        for (int d = 0; d < totalDrivers; d++)
         {
-            if (strcmp(vehicles[i].type,
-                       "Compactor") != 0)
-                continue;
+            if (drivers[d].driver_id == vehicles[i].assigned_driver_id)
+            {
+                driverIndex = d;
+                break;
+            }
         }
+        if (driverIndex == -1) continue;
 
-        // DISTANCE BETWEEN VEHICLE & BIN
+        if (drivers[driverIndex].hours_worked_today >=
+            drivers[driverIndex].max_daily_hours)
+            continue;
 
-        int distance =
-        calculateManhattanDistance(
+
+        int distance = calculateManhattanDistance(
             vehicles[i].current_x,
             vehicles[i].current_y,
             bins[emergencyBinIndex].x,
             bins[emergencyBinIndex].y
         );
 
-        // FUEL REQUIRED
-
         float fuelNeeded =
         ((distance * 2) / 10.0f) *
         vehicles[i].fuel_consumption_rate;
 
-        // CHECK FUEL AVAILABILITY
 
-        if (vehicles[i].current_fuel <
-            fuelNeeded)
-            continue;
+        if (vehicles[i].current_fuel < fuelNeeded)
+            refuelVehicle(i);
 
-        // FIND DRIVER
+        int score = distance;
 
-        int driverIndex = -1;
 
-        for (int d = 0; d < totalDrivers; d++)
+        if (vehicles[i].zone != bins[emergencyBinIndex].zone)
+            score += 50;
+
+
+        if (bins[emergencyBinIndex].waste_type == HAZARDOUS)
         {
-            if (drivers[d].driver_id ==
-                vehicles[i].assigned_driver_id)
-            {
-                driverIndex = d;
-                break;
-            }
+            if (strcmp(vehicles[i].type, "Compactor") != 0)
+                score += 40;
+
+            if (!drivers[driverIndex].has_hazmat_license)
+                score += 60;
         }
 
-        if (driverIndex == -1)
-            continue;
-
-        // DRIVER WORK LIMIT
-
-        if (drivers[driverIndex]
-            .hours_worked_today >=
-            drivers[driverIndex]
-            .max_daily_hours)
-            continue;
-
-        // HAZMAT LICENSE CHECK
-
-        if (bins[emergencyBinIndex]
-            .waste_type == HAZARDOUS &&
-            !drivers[driverIndex]
-            .has_hazmat_license)
-            continue;
-
-        // SELECT NEAREST VEHICLE
-
-        if (distance < minimumDistance)
+        if (score < bestScore)
         {
-            minimumDistance = distance;
+            bestScore = score;
             selectedVehicle = i;
         }
     }
 
-    // ───────────────────────────────────────
-    // NO SUITABLE VEHICLE
-    // ───────────────────────────────────────
 
     if (selectedVehicle == -1)
     {
-        printf("\nNo suitable emergency vehicle available.\n");
+        printf("\n⚠ No ideal vehicle → using fallback.\n");
 
-        printf("Emergency request could not be serviced");
-        printf(" within operational constraints.\n");
+        for (int i = 0; i < totalVehicles; i++)
+        {
+            if (vehicles[i].is_available && !vehicles[i].under_maintenance)
+            {
+                refuelVehicle(i);
+                selectedVehicle = i;
+                break;
+            }
+        }
+    }
 
+    if (selectedVehicle == -1)
+    {
+        printf("Emergency failed: No vehicles at all.\n");
         return;
     }
 
-    // ───────────────────────────────────────
-    // EMERGENCY ASSIGNMENT
-    // ───────────────────────────────────────
+    int distance = calculateManhattanDistance(
+        vehicles[selectedVehicle].current_x,
+        vehicles[selectedVehicle].current_y,
+        bins[emergencyBinIndex].x,
+        bins[emergencyBinIndex].y
+    );
 
-    int totalDistance =
-    minimumDistance * 2;
+    int totalDistance = distance * 2;
 
     float fuelUsed =
     (totalDistance / 10.0f) *
-    vehicles[selectedVehicle]
-    .fuel_consumption_rate;
+    vehicles[selectedVehicle].fuel_consumption_rate;
 
-    // UPDATE VEHICLE FUEL
+    vehicles[selectedVehicle].current_fuel -= fuelUsed;
 
-    vehicles[selectedVehicle]
-    .current_fuel -= fuelUsed;
+    vehicles[selectedVehicle].current_x = bins[emergencyBinIndex].x;
+    vehicles[selectedVehicle].current_y = bins[emergencyBinIndex].y;
 
-    // UPDATE VEHICLE LOCATION
+    vehicles[selectedVehicle].is_available = false;
 
-    vehicles[selectedVehicle]
-    .current_x =
-    bins[emergencyBinIndex].x;
-
-    vehicles[selectedVehicle]
-    .current_y =
-    bins[emergencyBinIndex].y;
-
-    // UPDATE VEHICLE ROUTE
-
-    if (vehicles[selectedVehicle]
-        .route_bin_count < 20)
-    {
-        vehicles[selectedVehicle]
-        .route_bin_ids[
-            vehicles[selectedVehicle]
-            .route_bin_count
-        ] =
-        bins[emergencyBinIndex]
-        .bin_id;
-
-        vehicles[selectedVehicle]
-        .route_bin_count++;
-    }
-
-    // VEHICLE TEMPORARILY BUSY
-
-    vehicles[selectedVehicle]
-    .is_available = false;
-
-    // MARK BIN COLLECTED
-
-    bins[emergencyBinIndex]
-    .collected_today = true;
-
-    bins[emergencyBinIndex]
-    .fill_level = 0.0f;
-
-    bins[emergencyBinIndex]
-    .wpi =
-    computeWPI(
-        bins[emergencyBinIndex]
-        .fill_level,
-
-        bins[emergencyBinIndex]
-        .waste_type
-    );
-
-    bins[emergencyBinIndex]
-    .priority = PRI_LOW;
-
-    // UPDATE DRIVER HOURS
+    bins[emergencyBinIndex].collected_today = true;
+    bins[emergencyBinIndex].fill_level = 0.0f;
+    bins[emergencyBinIndex].wpi =
+        computeWPI(0.0f, bins[emergencyBinIndex].waste_type);
+    bins[emergencyBinIndex].priority = PRI_LOW;
 
     for (int d = 0; d < totalDrivers; d++)
     {
         if (drivers[d].driver_id ==
-            vehicles[selectedVehicle]
-            .assigned_driver_id)
+            vehicles[selectedVehicle].assigned_driver_id)
         {
-            drivers[d]
-            .hours_worked_today += 2.0f;
-
+            drivers[d].hours_worked_today += 2.0f;
             break;
         }
     }
-
-    // SAVE ROUTE LOG
-
-    FILE *routeFP = fopen(ROUTES_CSV, "a");
-
-    if (routeFP)
-    {
-        if (isCsvEmpty(ROUTES_CSV))
-        {
-            fprintf(routeFP,
-            "route_id,vehicle_id,driver_id,zone,total_distance,total_fuel,bins_collected\n");
-        }
-
-        fprintf(routeFP,
-                "%d,%d,%d,%d,%d,%.2f,%d\n",
-
-                generateRouteID(),
-
-                vehicles[selectedVehicle]
-                .vehicle_id,
-
-                vehicles[selectedVehicle]
-                .assigned_driver_id,
-
-                bins[emergencyBinIndex]
-                .zone,
-
-                totalDistance,
-
-                fuelUsed,
-
-                1);
-
-        fclose(routeFP);
-    }
-
-    // SAVE UPDATED DATABASES
 
     saveBinsToCSV(totalBins);
     saveVehiclesToCSV(totalVehicles);
     saveDriversToCSV(totalDrivers);
 
-    // ───────────────────────────────────────
-    // FINAL OUTPUT
-    // ───────────────────────────────────────
-
-    printf("\nEMERGENCY COLLECTION COMPLETED\n");
-
-    printf("Assigned Vehicle : %d\n",
-           vehicles[selectedVehicle]
-           .vehicle_id);
-
-    printf("Driver ID        : %d\n",
-           vehicles[selectedVehicle]
-           .assigned_driver_id);
-
-    printf("Distance Covered : %d km\n",
-           totalDistance);
-
-    printf("Fuel Used        : %.2f liters\n",
-           fuelUsed);
-
-    printf("Vehicle Position : (%d, %d)\n",
-
-           vehicles[selectedVehicle]
-           .current_x,
-
-           vehicles[selectedVehicle]
-           .current_y);
-
-    printf("Emergency bin collected successfully.\n");
-
-    printf("\nNormal schedules dynamically adjusted.\n");
+    printf("\n EMERGENCY HANDLED SUCCESSFULLY \n");
+    printf("Vehicle : %d\n", vehicles[selectedVehicle].vehicle_id);
+    printf("Distance: %d km\n", totalDistance);
+    printf("Fuel Used: %.2f L\n", fuelUsed);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
